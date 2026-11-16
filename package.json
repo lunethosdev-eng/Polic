@@ -1,0 +1,14 @@
+{
+  "name": "polic-bot",
+  "version": "1.0.0",
+  "description": "Discord bot polic with real-time app theme sync and lyrics",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  }
+}
