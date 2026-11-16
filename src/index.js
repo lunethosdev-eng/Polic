@@ -1,91 +1,52 @@
 const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 const express = require('express');
+const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
 
-// --- 1. CONFIGURACIÓN DE EXPRESS (API PARA TU APP) ---
+// Inicializar Supabase
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+
 const app = express();
 app.use(express.json());
 
-// Base de datos simulada en memoria (puedes cambiarla por MongoDB, PostgreSQL, etc.)
-// Aquí guardamos los temas personalizados por userId que vienen desde tu app
-const userThemes = new Map();
+// --- ENDPOINTS CON SUPABASE ---
 
-// Endpoint para que tu app actualice el tema de la card en tiempo real
-app.put('/api/users/:userId/theme', (req, res) => {
+// Actualizar tema en Supabase (Guardado en una tabla llamada 'user_themes')
+app.put('/api/users/:userId/theme', async (req, res) => {
     const { userId } = req.params;
-    const themeConfig = req.body; // Ej: { backgroundColor, textColor, themeId }
+    const themeConfig = req.body; 
 
-    // Guardamos la configuración
-    userThemes.set(userId, themeConfig);
+    // Guardar o actualizar en Supabase (asumiendo que tu tabla tiene columnas 'user_id' y 'theme_data')
+    const { data, error } = await supabase
+        .from('user_themes')
+        .upsert({ user_id: userId, theme_data: themeConfig }, { onConflict: 'user_id' });
 
-    console.log(`[API] Tema actualizado en tiempo real para el usuario ${userId}:`, themeConfig);
-    
-    return res.status(200).json({ 
-        success: true, 
-        message: 'Tema actualizado correctamente', 
-        theme: themeConfig 
-    });
-});
-
-// Endpoint para que el bot u otros servicios consulten el tema actual
-app.get('/api/users/:userId/theme', (req, res) => {
-    const { userId } = req.params;
-    const theme = userThemes.get(userId) || {
-        themeId: 'default',
-        backgroundColor: '#1e1e2e',
-        textColor: '#cdd6f4'
-    };
-    return res.status(200).json(theme);
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`[API] Servidor corriendo en el puerto ${PORT}`);
-});
-
-
-// --- 2. CONFIGURACIÓN DEL BOT DE DISCORD (polic) ---
-const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-    ],
-});
-
-client.once('ready', () => {
-    console.log(`[Bot] ¡${client.user.tag} (polic) está conectado y listo!`);
-});
-
-// Ejemplo de comando de texto o interacción que genera la card personalizada
-client.on('messageCreate', async (message) => {
-    if (message.author.bot) return;
-
-    // Comando básico: !polic card
-    if (message.content === '!polic card') {
-        const userId = message.author.id;
-
-        // Obtenemos el tema personalizado (simulando la consulta a la API / base de datos)
-        const currentTheme = userThemes.get(userId) || {
-            backgroundColor: '#1e1e2e',
-            textColor: '#cdd6f4',
-            themeId: 'Clásico'
-        };
-
-        // Creamos una card usando Embeds de Discord adaptada al tema del usuario
-        const cardEmbed = new EmbedBuilder()
-            .setTitle(`🎵 Tarjeta de Reproducción - polic`)
-            .setDescription(`Tema activo en tu app: **${currentTheme.themeId}**`)
-            .addFields(
-                { name: 'Canción Actual', value: 'Artista - Ejemplo de Canción' },
-                { name: 'Estilo aplicado', value: `Fondo: ${currentTheme.backgroundColor}` }
-            )
-            .setColor(currentTheme.backgroundColor.startsWith('#') ? currentTheme.backgroundColor : '#5865F2')
-            .setTimestamp();
-
-        await message.reply({ embeds: [cardEmbed] });
+    if (error) {
+        return res.status(500).json({ success: false, error: error.message });
     }
+
+    console.log(`[API] Tema actualizado en Supabase para el usuario ${userId}`);
+    return res.status(200).json({ success: true, theme: themeConfig });
 });
 
-// Iniciar sesión del bot con el Token de Discord
-client.login(process.env.DISCORD_BOT_TOKEN);
+// Obtener tema desde Supabase
+app.get('/api/users/:userId/theme', async (req, res) => {
+    const { userId } = req.params;
+
+    const { data, error } = await supabase
+        .from('user_themes')
+        .select('theme_data')
+        .eq('user_id', userId)
+        .single();
+
+    if (error || !data) {
+        // Tema por defecto si no existe en la base de datos
+        return res.status(200).json({
+            themeId: 'default',
+            backgroundColor: '#1e1e2e',
+            textColor: '#cdd6f4'
+        });
+    }
+
+    return res.status(200).json(data.theme_data);
+});
