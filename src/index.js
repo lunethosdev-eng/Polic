@@ -16,8 +16,61 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// --- 1. ENDPOINTS DE AUTENTICACIÓN (DISCORD OAUTH2) ---
+// --- 0. PÁGINA PRINCIPAL (UI DASHBOARD) ---
+app.get('/', (req, res) => {
+    res.send(`
+        <!DOCTYPE html>
+        <html lang="es">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Polic - API & Dashboard</title>
+            <style>
+                body { background: #0f172a; color: #f8fafc; font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 40px; display: flex; justify-content: center; }
+                .container { max-width: 700px; width: 100%; }
+                .card { background: #1e293b; padding: 30px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.4); border: 1px solid #334155; margin-bottom: 20px; }
+                h1 { color: #38bdf8; margin-top: 0; display: flex; align-items: center; gap: 10px; }
+                p { color: #94a3b8; line-height: 1.6; }
+                .badge { background: #10b981; color: white; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; }
+                .btn-group { display: flex; gap: 12px; margin-top: 20px; flex-wrap: wrap; }
+                .btn { background: #5865F2; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: bold; display: inline-flex; align-items: center; gap: 8px; transition: background 0.2s; }
+                .btn:hover { background: #4752c4; }
+                .btn-green { background: #10b981; }
+                .btn-green:hover { background: #059669; }
+                code { background: #0f172a; padding: 2px 6px; border-radius: 4px; color: #38bdf8; font-size: 14px; }
+                ul { padding-left: 20px; color: #cbd5e1; }
+                li { margin-bottom: 8px; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="card">
+                    <h1>🎵 Polic API <span class="badge">ONLINE</span></h1>
+                    <p>Bienvenido al núcleo de sincronización de reproducción, letras y perfiles de Discord para tu aplicación.</p>
+                    
+                    <div class="btn-group">
+                        <a href="/api/auth/discord" class="btn">🚀 Vincular con Discord</a>
+                        <a href="/customize" class="btn btn-green">🎨 Personalizar Tarjeta</a>
+                    </div>
+                </div>
 
+                <div class="card">
+                    <h3>📚 Endpoints Principales</h3>
+                    <ul>
+                        <li><code>GET /api/auth/discord</code> - Iniciar sesión OAuth2</li>
+                        <li><code>GET /api/themes/available</code> - Listar temas disponibles (JSON)</li>
+                        <li><code>POST /api/users/:userId/now-playing</code> - Enviar música y letras</li>
+                        <li><code>GET /api/users/:userId/now-playing</code> - Obtener reproducción actual</li>
+                        <li><code>PUT /api/users/:userId/theme</code> - Guardar diseño de tarjeta</li>
+                    </ul>
+                </div>
+            </div>
+        </body>
+        </html>
+    `);
+});
+
+// --- 1. ENDPOINTS DE AUTENTICACIÓN (DISCORD OAUTH2) ---
 app.get('/api/auth/discord', (req, res) => {
     const clientId = process.env.DISCORD_CLIENT_ID;
     const redirectUri = encodeURIComponent(process.env.DISCORD_REDIRECT_URI);
@@ -71,16 +124,8 @@ app.get('/api/auth/discord/callback', async (req, res) => {
 
         if (error) throw error;
 
-        // Devuelve JSON puro para que tu app cliente lo maneje como prefiera
-        return res.status(200).json({
-            success: true,
-            message: 'Cuenta vinculada correctamente',
-            user: {
-                id: discordUser.id,
-                username: discordUser.username,
-                avatar: discordUser.avatar
-            }
-        });
+        // Redirige directamente a la UI de personalización con su ID de usuario
+        return res.redirect(`/customize?userId=${discordUser.id}`);
 
     } catch (err) {
         return res.status(500).json({ success: false, error: err.message });
@@ -89,7 +134,6 @@ app.get('/api/auth/discord/callback', async (req, res) => {
 
 
 // --- 2. ENDPOINTS DE MÚSICA Y LETRAS (NOW PLAYING) ---
-
 app.post('/api/users/:userId/now-playing', async (req, res) => {
     try {
         const { userId } = req.params;
@@ -137,41 +181,14 @@ app.get('/api/users/:userId/now-playing', async (req, res) => {
 });
 
 
-// --- 3. ENDPOINTS DE TEMAS Y DISEÑO DE LA CARD ---
-
-// NUEVO: Devuelve la lista de todos los temas disponibles para la card en JSON
+// --- 3. ENDPOINTS DE TEMAS Y UI DE PERSONALIZACIÓN WEB ---
 app.get('/api/themes/available', (req, res) => {
     const themes = [
-        {
-            themeId: 'classic',
-            name: 'Clásico Oscuro',
-            backgroundColor: '#1e1e2e',
-            textColor: '#cdd6f4',
-            accentColor: '#5865F2'
-        },
-        {
-            themeId: 'cyberpunk',
-            name: 'Cyberpunk Neon',
-            backgroundColor: '#0f172a',
-            textColor: '#38bdf8',
-            accentColor: '#10b981'
-        },
-        {
-            themeId: 'sunset',
-            name: 'Sunset Vibe',
-            backgroundColor: '#2e1065',
-            textColor: '#f472b6',
-            accentColor: '#fb923c'
-        },
-        {
-            themeId: 'midnight',
-            name: 'Midnight Minimal',
-            backgroundColor: '#09090b',
-            textColor: '#a1a1aa',
-            accentColor: '#ffffff'
-        }
+        { themeId: 'classic', name: 'Clásico Oscuro', backgroundColor: '#1e1e2e', textColor: '#cdd6f4', accentColor: '#5865F2' },
+        { themeId: 'cyberpunk', name: 'Cyberpunk Neon', backgroundColor: '#0f172a', textColor: '#38bdf8', accentColor: '#10b981' },
+        { themeId: 'sunset', name: 'Sunset Vibe', backgroundColor: '#2e1065', textColor: '#f472b6', accentColor: '#fb923c' },
+        { themeId: 'midnight', name: 'Midnight Minimal', backgroundColor: '#09090b', textColor: '#a1a1aa', accentColor: '#ffffff' }
     ];
-
     return res.status(200).json({ success: true, themes });
 });
 
@@ -203,11 +220,7 @@ app.get('/api/users/:userId/theme', async (req, res) => {
             .single();
 
         if (error || !data) {
-            return res.status(200).json({
-                themeId: 'classic',
-                backgroundColor: '#1e1e2e',
-                textColor: '#cdd6f4'
-            });
+            return res.status(200).json({ themeId: 'classic', backgroundColor: '#1e1e2e', textColor: '#cdd6f4' });
         }
 
         return res.status(200).json(data.theme_data);
@@ -216,16 +229,87 @@ app.get('/api/users/:userId/theme', async (req, res) => {
     }
 });
 
+// Interfaz Web Interactiva para personalizar la tarjeta visualmente
+app.get('/customize', (req, res) => {
+    const userId = req.query.userId || '';
+    res.send(`
+        <!DOCTYPE html>
+        <html lang="es">
+        <head>
+            <meta charset="UTF-8">
+            <title>Personalizar Tarjeta - Polic</title>
+            <style>
+                body { background: #0f172a; color: #f8fafc; font-family: system-ui, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+                .container { background: #1e293b; padding: 30px; border-radius: 16px; width: 100%; max-width: 400px; box-shadow: 0 10px 25px rgba(0,0,0,0.4); border: 1px solid #334155; }
+                h2 { text-align: center; color: #38bdf8; margin-top: 0; }
+                label { display: block; margin-top: 15px; font-size: 14px; color: #94a3b8; font-weight: 500; }
+                input, select { width: 100%; padding: 10px; margin-top: 5px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: white; box-sizing: border-box; font-size: 14px; }
+                button { width: 100%; margin-top: 25px; background: #10b981; color: white; padding: 12px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 15px; transition: background 0.2s; }
+                button:hover { background: #059669; }
+                .msg { text-align: center; margin-top: 15px; font-size: 14px; font-weight: 500; }
+                .back { display: block; text-align: center; margin-top: 15px; color: #38bdf8; text-decoration: none; font-size: 14px; }
+                .back:hover { text-decoration: underline; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h2>🎨 Personalizar Card</h2>
+                <form id="themeForm">
+                    <label>ID de Usuario Discord:</label>
+                    <input type="text" id="userId" value="${userId}" required placeholder="Ej. 10882845..." />
+
+                    <label>Nombre del Tema:</label>
+                    <input type="text" id="themeId" value="Cyberpunk" required />
+
+                    <label>Color de Fondo:</label>
+                    <input type="color" id="backgroundColor" value="#1e1e2e" style="height: 45px; padding: 0; cursor: pointer;" />
+
+                    <label>Color de Texto:</label>
+                    <input type="color" id="textColor" value="#cdd6f4" style="height: 45px; padding: 0; cursor: pointer;" />
+
+                    <button type="submit">Guardar Cambios</button>
+                </form>
+                <div id="responseMsg" class="msg"></div>
+                <a href="/" class="back">← Volver al inicio</a>
+            </div>
+
+            <script>
+                document.getElementById('themeForm').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const userId = document.getElementById('userId').value;
+                    const themeId = document.getElementById('themeId').value;
+                    const backgroundColor = document.getElementById('backgroundColor').value;
+                    const textColor = document.getElementById('textColor').value;
+
+                    const res = await fetch('/api/users/' + userId + '/theme', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ themeId, backgroundColor, textColor })
+                    });
+
+                    const data = await res.json();
+                    const msgDiv = document.getElementById('responseMsg');
+                    if (data.success) {
+                        msgDiv.style.color = '#34d399';
+                        msgDiv.innerText = '¡Cambios guardados con éxito!';
+                    } else {
+                        msgDiv.style.color = '#f87171';
+                        msgDiv.innerText = 'Error al guardar.';
+                    }
+                });
+            </script>
+        </body>
+        </html>
+    `);
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`[API] Servidor corriendo en el puerto ${PORT}`);
 });
 
-
 // --- 4. CONFIGURACIÓN DEL BOT DE DISCORD ---
-const client = new Client({
-    intents: [GatewayIntentBits.Guilds],
-});
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 client.once('ready', () => {
     console.log(`[Bot] ¡${client.user.tag} (polic) está conectado y listo!`);
