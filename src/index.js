@@ -1,9 +1,8 @@
-const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits } = require('discord.js');
 const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
 
-// Verificar variables de entorno esenciales
 if (!process.env.DISCORD_BOT_TOKEN) {
     console.error("[Error crítico] Falta la variable DISCORD_BOT_TOKEN en el entorno.");
 }
@@ -15,10 +14,10 @@ const supabase = createClient(
 
 const app = express();
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // --- 1. ENDPOINTS DE AUTENTICACIÓN (DISCORD OAUTH2) ---
 
-// Redirige al usuario a la página de inicio de sesión de Discord
 app.get('/api/auth/discord', (req, res) => {
     const clientId = process.env.DISCORD_CLIENT_ID;
     const redirectUri = encodeURIComponent(process.env.DISCORD_REDIRECT_URI);
@@ -27,7 +26,6 @@ app.get('/api/auth/discord', (req, res) => {
     return res.redirect(discordOAuthUrl);
 });
 
-// Recibe el código de Discord, obtiene el perfil y lo vincula en Supabase
 app.get('/api/auth/discord/callback', async (req, res) => {
     const code = req.query.code;
     if (!code) {
@@ -35,7 +33,6 @@ app.get('/api/auth/discord/callback', async (req, res) => {
     }
 
     try {
-        // Intercambiar el código por un token de acceso de Discord
         const tokenResponse = await fetch('https://discord.com/api/oauth2/token', {
             method: 'POST',
             body: new URLSearchParams({
@@ -55,7 +52,6 @@ app.get('/api/auth/discord/callback', async (req, res) => {
             return res.status(400).json({ success: false, error: 'Fallo al autenticar con Discord', details: tokenData });
         }
 
-        // Obtener los datos del usuario de Discord
         const userResponse = await fetch('https://discord.com/api/users/@me', {
             headers: {
                 authorization: `Bearer ${tokenData.access_token}`,
@@ -64,7 +60,6 @@ app.get('/api/auth/discord/callback', async (req, res) => {
 
         const discordUser = await userResponse.json();
 
-        // Guardar o vincular el usuario en Supabase
         const { error } = await supabase
             .from('user_profiles')
             .upsert({ 
@@ -76,11 +71,15 @@ app.get('/api/auth/discord/callback', async (req, res) => {
 
         if (error) throw error;
 
-        // Aquí puedes redirigir al usuario de vuelta a tu app móvil/web con éxito
-        return res.status(200).json({ 
-            success: true, 
-            message: 'Cuenta vinculada correctamente con polic',
-            user: { id: discordUser.id, username: discordUser.username } 
+        // Devuelve JSON puro para que tu app cliente lo maneje como prefiera
+        return res.status(200).json({
+            success: true,
+            message: 'Cuenta vinculada correctamente',
+            user: {
+                id: discordUser.id,
+                username: discordUser.username,
+                avatar: discordUser.avatar
+            }
         });
 
     } catch (err) {
@@ -89,7 +88,92 @@ app.get('/api/auth/discord/callback', async (req, res) => {
 });
 
 
-// --- 2. ENDPOINTS DE TEMAS DE LA CARD ---
+// --- 2. ENDPOINTS DE MÚSICA Y LETRAS (NOW PLAYING) ---
+
+app.post('/api/users/:userId/now-playing', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { song, artist, lyrics, albumArt } = req.body;
+
+        const { error } = await supabase
+            .from('user_now_playing')
+            .upsert({ 
+                user_id: userId, 
+                song_data: { song, artist, lyrics, albumArt },
+                updated_at: new Date()
+            }, { onConflict: 'user_id' });
+
+        if (error) throw error;
+
+        return res.status(200).json({ success: true, message: 'Reproducción actualizada' });
+    } catch (err) {
+        return res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.get('/api/users/:userId/now-playing', async (req, res) => {
+    try {
+        const { userId } = req.params;
+
+        const { data, error } = await supabase
+            .from('user_now_playing')
+            .select('song_data')
+            .eq('user_id', userId)
+            .single();
+
+        if (error || !data) {
+            return res.status(200).json({
+                song: 'Sin reproducción',
+                artist: 'Desconocido',
+                lyrics: '',
+                albumArt: ''
+            });
+        }
+
+        return res.status(200).json(data.song_data);
+    } catch (err) {
+        return res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+
+// --- 3. ENDPOINTS DE TEMAS Y DISEÑO DE LA CARD ---
+
+// NUEVO: Devuelve la lista de todos los temas disponibles para la card en JSON
+app.get('/api/themes/available', (req, res) => {
+    const themes = [
+        {
+            themeId: 'classic',
+            name: 'Clásico Oscuro',
+            backgroundColor: '#1e1e2e',
+            textColor: '#cdd6f4',
+            accentColor: '#5865F2'
+        },
+        {
+            themeId: 'cyberpunk',
+            name: 'Cyberpunk Neon',
+            backgroundColor: '#0f172a',
+            textColor: '#38bdf8',
+            accentColor: '#10b981'
+        },
+        {
+            themeId: 'sunset',
+            name: 'Sunset Vibe',
+            backgroundColor: '#2e1065',
+            textColor: '#f472b6',
+            accentColor: '#fb923c'
+        },
+        {
+            themeId: 'midnight',
+            name: 'Midnight Minimal',
+            backgroundColor: '#09090b',
+            textColor: '#a1a1aa',
+            accentColor: '#ffffff'
+        }
+    ];
+
+    return res.status(200).json({ success: true, themes });
+});
 
 app.put('/api/users/:userId/theme', async (req, res) => {
     try {
@@ -120,7 +204,7 @@ app.get('/api/users/:userId/theme', async (req, res) => {
 
         if (error || !data) {
             return res.status(200).json({
-                themeId: 'default',
+                themeId: 'classic',
                 backgroundColor: '#1e1e2e',
                 textColor: '#cdd6f4'
             });
@@ -138,52 +222,15 @@ app.listen(PORT, () => {
 });
 
 
-// --- 3. CONFIGURACIÓN DEL BOT DE DISCORD (polic) ---
+// --- 4. CONFIGURACIÓN DEL BOT DE DISCORD ---
 const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-    ],
+    intents: [GatewayIntentBits.Guilds],
 });
 
 client.once('ready', () => {
     console.log(`[Bot] ¡${client.user.tag} (polic) está conectado y listo!`);
 });
 
-client.on('messageCreate', async (message) => {
-    if (message.author.bot) return;
-
-    if (message.content === '!polic card') {
-        const userId = message.author.id;
-
-        let currentTheme = { backgroundColor: '#1e1e2e', textColor: '#cdd6f4', themeId: 'Clásico' };
-        
-        try {
-            const { data } = await supabase
-                .from('user_themes')
-                .select('theme_data')
-                .eq('user_id', userId)
-                .single();
-            if (data) currentTheme = data.theme_data;
-        } catch (e) {
-            // Usa el tema por defecto si hay error
-        }
-
-        const cardEmbed = new EmbedBuilder()
-            .setTitle(`🎵 Tarjeta de Reproducción - polic`)
-            .setDescription(`Tema activo en tu app: **${currentTheme.themeId || 'Personalizado'}**`)
-            .addFields(
-                { name: 'Canción Actual', value: 'Artista - Ejemplo de Canción' },
-                { name: 'Estilo aplicado', value: `Fondo: ${currentTheme.backgroundColor || '#1e1e2e'}` }
-            )
-            .setColor(currentTheme.backgroundColor?.startsWith('#') ? currentTheme.backgroundColor : '#5865F2')
-            .setTimestamp();
-
-        await message.reply({ embeds: [cardEmbed] });
-    }
-});
-
 client.login(process.env.DISCORD_BOT_TOKEN).catch(err => {
-    console.error("[Error de Discord] No se pudo iniciar sesión con el token proporcionado:", err.message);
+    console.error("[Error de Discord] No se pudo iniciar sesión:", err.message);
 });
